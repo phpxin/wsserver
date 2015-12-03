@@ -176,7 +176,7 @@ void sig_chld_func()
 
 void response(int client_sock_f){
 
-    char *format = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n\0" ;
+    char *format = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n" ;
 
     int format_l = strlen(format);
     size_t key_len = strlen(req_info.accept_key);
