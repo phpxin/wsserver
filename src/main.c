@@ -18,7 +18,7 @@
 #include <openssl/evp.h>
 #include <b64/base64.h>
 
-#define IP "192.168.1.108"
+#define IP "192.168.3.17"
 #define PORT 10002
 
 #define BS 1024   ///buff size
@@ -86,12 +86,9 @@ int main()
 		exit( -1 );
 	}
 
-
     struct sockaddr_in client_addr;
 	socklen_t client_sock_l = 0;
 	int client_sock_f = -1;
-
-
 
     // >>>>>>>>>> test
     client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
@@ -100,7 +97,6 @@ int main()
     response(client_sock_f);
     //login done  begin msg ...
     while(1){
-
 
         void *frameBuff = malloc(2);
         //int recv( _In_ SOCKET s, _Out_ char *buf, _In_ int len, _In_ int flags);
@@ -134,8 +130,6 @@ int main()
             //recv(client_sock_f, _mask, 4, 0);
         }
 
-        printf("len is %u \n", len);
-
         if(len_flag>125){   //暂时不支持大内容数据
             if (len_flag==126) {
                 /* code */
@@ -143,18 +137,20 @@ int main()
                 recv(client_sock_f, xx, 2, 0);
                 unsigned short _len16 ;
                 memcpy(&_len16, xx, 2);
-                len = _len16;
+                len = ntohs(_len16);
             }else if(len_flag==127){
                 char xx[8];
                 recv(client_sock_f, xx, 8, 0);
                 unsigned long _len64 ;
                 memcpy(&_len64, xx, 8);
-                len = _len64;
+                len = ntohl(_len64);
             }else{
                 printf("content too long \n");
                 exit(-1);
             }
         }
+
+        printf("len is %u \n", len);
 
         if(mask){
             recv(client_sock_f, _mask, 4, 0);
@@ -162,7 +158,6 @@ int main()
 
         char *content = (char *) malloc(len);
         recv(client_sock_f, content, len, 0);
-
 
         if(mask){
             // 解码
@@ -188,17 +183,14 @@ int main()
         send_len+=2;
 
         if (len_flag==126) {
-            /* code */
-            //unsigned short _len16 ;
-            //recv(client_sock_f, &_len16, 2, 0);
-            //len = _len16;
-            memcpy(sendBuff+2, &len, 2);
+
+            unsigned short _tmp = htons(len);
+            memcpy(sendBuff+2, &_tmp, 2);
             send_len += 2;
         }else if(len_flag==127){
-            //unsigned long _len64 ;
-            //recv(client_sock_f, &_len64, 8, 0);
-            //len = _len64;
-            memcpy(sendBuff+2, &len, 8);
+
+            unsigned long _tmp = htonl(len);
+            memcpy(sendBuff+2, &_tmp, 8);
             send_len += 8;
         }
 
@@ -206,8 +198,13 @@ int main()
         send_len += len;
         send(client_sock_f, sendBuff, send_len, 0);
 
+        //清理内存 ╭(╯^╰)╮
+        free(sendBuff);
+        sendBuff = NULL;
         free(content);
+        content = NULL;
         free(frameBuff);
+        frameBuff = NULL;
     }
 
     //disconnection
