@@ -11,7 +11,7 @@ OUTPUTF = ./output/
 BINF = ./bin/
 
 INCLUDE = -I./h/
-CLIB = -L${SSLDIR}engines/ -lcapi
+CLIB = -L${SSLDIR}engines/ -lcapi -lpthread
 
 wsserver: ${OUTPUTF}main.o ${OUTPUTF}base64.o ${OUTPUTF}cencode.o ${OUTPUTF}cdecode.o ${OUTPUTF}HString.o
 	${CC} ${CFLAGS} -o ${BINF}wsserver ${OUTPUTF}main.o ${OUTPUTF}base64.o ${OUTPUTF}cencode.o ${OUTPUTF}cdecode.o ${OUTPUTF}HString.o ${CLIB}

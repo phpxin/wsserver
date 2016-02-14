@@ -6,6 +6,7 @@
 //memory and io
 #include <string.h>
 #include <stdio.h>
+#include <pthread.h>
 //socket
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -17,11 +18,17 @@
 //sign
 #include <openssl/evp.h>
 #include <b64/base64.h>
+//mulit
+#include <sys/epoll.h>
+// error oper
+#include <errno.h>
 
-#define IP "192.168.3.17"
+#define IP "192.168.1.108"
 #define PORT 10002
 
 #define BS 1024   ///buff size
+#define EP_LIMIT 200
+
 
 #define METHOD_GET 1
 #define METHOD_POST 2
@@ -35,6 +42,7 @@ void sigfunc_callback(int sig);
 void sig_chld_func();
 void sig_int_func();
 char* keygen(const char *key);
+static void *thread_func(void *udata); /* 连接线程 */
 
 typedef struct {
     char accept_key[1024];
@@ -43,6 +51,14 @@ typedef struct {
 RequestInfo req_info = {"\0"} ;
 
 int serv_sock_f ;
+pthread_t thread_c;
+// about epoll
+int client_heap[EP_LIMIT] ; // 游戏人数
+int ep_servf = -1;
+int ep_clients= -1;
+struct epoll_event *event_ok = NULL;
+struct epoll_event *ce_ok = NULL;
+// about epoll end
 
 int main()
 {
@@ -90,12 +106,69 @@ int main()
 	socklen_t client_sock_l = 0;
 	int client_sock_f = -1;
 
+
+    //lx@0109 增加epoll代码
+    ep_servf = epoll_create(5);
+    ep_clients = epoll_create(5);
+
+	struct epoll_event _event;
+	_event.data.fd = serv_sock_f;
+    _event.events = EPOLLIN ;
+
+	flag = epoll_ctl(ep_servf, EPOLL_CTL_ADD, serv_sock_f, &_event);
+    if (flag == -1) {
+		//elog(E_ERROR, "epoll_ctl failed error num is %d", errno);
+        perror("epoll_ctl");
+        exit( -1 );
+    }
+
+	event_ok = (struct epoll_event *)calloc( 1, sizeof(struct epoll_event));
+
+    flag = pthread_create(&thread_c, NULL, thread_func, NULL);
+	if(flag != 0)
+	{
+		//elog(E_ERROR, "run child thread failed error num is %d", errno);
+        perror("pthread_create");
+		exit( -1 );
+	}
+    //end
+    
+    int client_len = 0;
+    while(1)
+	{
+        int isok=epoll_wait(ep_servf, event_ok, 1, -1) ;
+        if(isok>0 && event_ok[0].data.fd == serv_sock_f)
+        {
+            if(client_len >= EP_LIMIT){
+                printf("warning");
+            }
+            
+            client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
+            //for login
+            read_header(client_sock_f);
+            response(client_sock_f);
+            //login done  begin msg ...
+            
+            // record to client pool
+            client_heap[client_len] = client_sock_f ;
+            client_len++ ;
+
+            /* 添加到客户端epoll */
+			_event.data.fd = client_sock_f;
+    		_event.events = EPOLLIN | EPOLLOUT ;
+			epoll_ctl(ep_clients, EPOLL_CTL_ADD, client_sock_f, &_event);
+        }
+    }
+
     // >>>>>>>>>> test
+    /*
     client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
     //for login
     read_header(client_sock_f);
     response(client_sock_f);
+    */
     //login done  begin msg ...
+    /*
     while(1){
 
         void *frameBuff = malloc(2);
@@ -104,20 +177,20 @@ int main()
 
         unsigned char _infos;
         memcpy(&_infos, frameBuff, 1);
-        /*
-        0 FIN
-        1-3 RSV1-3
-        4-7 opcode
-        */
+        
+        //0 FIN
+        //1-3 RSV1-3
+        //4-7 opcode
+        
         unsigned char fin = _infos>>7;
         printf("fin is %u \n", fin);
 
         unsigned char _len, len_flag;
         memcpy(&_len, frameBuff+1, 1);
-        /*
-        0 MASK
-        1-7 Payload len
-        */
+        
+        //0 MASK
+        //1-7 Payload len
+        
         unsigned long len = _len ;
         len_flag = _len;
 
@@ -132,7 +205,7 @@ int main()
 
         if(len_flag>125){   //暂时不支持大内容数据
             if (len_flag==126) {
-                /* code */
+                // code 
                 char xx[2];
                 recv(client_sock_f, xx, 2, 0);
                 unsigned short _len16 ;
@@ -206,12 +279,12 @@ int main()
         free(frameBuff);
         frameBuff = NULL;
     }
+    */
 
     //disconnection
     //close(client_sock_f) ;
     //close(serv_sock_f);
     // >>>>>>>>>> test end
-
     /*
 
     while(1){
@@ -233,6 +306,135 @@ int main()
 
 
     exit(0);
+}
+
+static void *thread_func(void *udata)
+{
+	/* 扩展多线程注意：这里应该是每个线程管理不同的epoll，避免并发加锁造成拥塞，影响程序效率 */
+	ce_ok = (struct epoll_event *)calloc( EP_LIMIT, sizeof(struct epoll_event));
+	int i = 0;
+	while(1)
+	{
+		int isok = epoll_wait(ep_clients, ce_ok, 1, -1) ;
+		for( i=0; i<isok; i++)
+		{
+			if(ce_ok[i].events & EPOLLIN)
+			{
+				//msg(ce_ok[i].data.fd);
+                int client_sock_f = ce_ok[i].data.fd;
+                void *frameBuff = malloc(2);
+                //int recv( _In_ SOCKET s, _Out_ char *buf, _In_ int len, _In_ int flags);
+                recv(client_sock_f, frameBuff, 2, 0);
+
+                unsigned char _infos;
+                memcpy(&_infos, frameBuff, 1);
+                
+                //0 FIN
+                //1-3 RSV1-3
+                //4-7 opcode
+                
+                unsigned char fin = _infos>>7;
+                printf("fin is %u \n", fin);
+
+                unsigned char _len, len_flag;
+                memcpy(&_len, frameBuff+1, 1);
+                
+                //0 MASK
+                //1-7 Payload len
+                
+                unsigned long len = _len ;
+                len_flag = _len;
+
+                unsigned char mask = _len>>7;
+                printf("mask is %u\n", mask);
+
+                unsigned char _mask[4];
+                if(mask){
+                    len_flag = len = _len^128 ;
+                    //recv(client_sock_f, _mask, 4, 0);
+                }
+
+                if(len_flag>125){   //暂时不支持大内容数据
+                    if (len_flag==126) {
+                        // code 
+                        char xx[2];
+                        recv(client_sock_f, xx, 2, 0);
+                        unsigned short _len16 ;
+                        memcpy(&_len16, xx, 2);
+                        len = ntohs(_len16);
+                    }else if(len_flag==127){
+                        char xx[8];
+                        recv(client_sock_f, xx, 8, 0);
+                        unsigned long _len64 ;
+                        memcpy(&_len64, xx, 8);
+                        len = ntohl(_len64);
+                    }else{
+                        printf("content too long \n");
+                        exit(-1);
+                    }
+                }
+
+                printf("len is %u \n", len);
+
+                if(mask){
+                    recv(client_sock_f, _mask, 4, 0);
+                }
+
+                char *content = (char *) malloc(len);
+                recv(client_sock_f, content, len, 0);
+
+                if(mask){
+                    // 解码
+                    int i;
+                    for(i=0; i<len; i++){
+                        content[i] = content[i] ^ _mask[i%4] ;
+                    }
+                }
+
+                printf("recv: %s\n", content);
+
+                // response
+                size_t _send_len = 32*4 + len , send_len = 0  ; // 待发送的数据长度
+                void *sendBuff = malloc(_send_len);
+
+                unsigned char response_1b = 0 ;
+                response_1b = response_1b | (1<<7) ;
+                response_1b = response_1b | 1 ;
+                unsigned char response_2b = len_flag;
+
+                memcpy(sendBuff, &response_1b, 1);
+                memcpy(sendBuff+1, &response_2b, 1);
+                send_len+=2;
+
+                if (len_flag==126) {
+
+                    unsigned short _tmp = htons(len);
+                    memcpy(sendBuff+2, &_tmp, 2);
+                    send_len += 2;
+                }else if(len_flag==127){
+
+                    unsigned long _tmp = htonl(len);
+                    memcpy(sendBuff+2, &_tmp, 8);
+                    send_len += 8;
+                }
+
+                memcpy(sendBuff+send_len, content, len) ;
+                send_len += len;
+                send(client_sock_f, sendBuff, send_len, 0);
+
+                //清理内存 ╭(╯^╰)╮
+                free(sendBuff);
+                sendBuff = NULL;
+                free(content);
+                content = NULL;
+                free(frameBuff);
+                frameBuff = NULL;
+			}
+		}
+	}
+
+
+	pthread_exit( NULL );
 }
 
 void sigfunc_callback(int sig)
