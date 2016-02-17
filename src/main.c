@@ -23,7 +23,7 @@
 // error oper
 #include <errno.h>
 
-#define IP "192.168.1.108"
+#define IP "192.168.3.17"
 #define PORT 10002
 
 #define BS 1024   ///buff size
@@ -33,7 +33,9 @@
 #define METHOD_GET 1
 #define METHOD_POST 2
 
-#define WWW_ROOT "/home/public/htdocs"
+#define CLI_LIMIT 100
+
+//#define WWW_ROOT "/home/public/htdocs"
 
 void read_header(int cfd) ;
 int read_line(int cfd, void **buf, int *rlen);
@@ -59,6 +61,10 @@ int ep_clients= -1;
 struct epoll_event *event_ok = NULL;
 struct epoll_event *ce_ok = NULL;
 // about epoll end
+
+//客户端连接符集合
+int cli_vertor[CLI_LIMIT] ;
+int cli_counter = 0 ;
 
 int main()
 {
@@ -132,7 +138,7 @@ int main()
 		exit( -1 );
 	}
     //end
-    
+
     int client_len = 0;
     while(1)
 	{
@@ -142,18 +148,20 @@ int main()
             if(client_len >= EP_LIMIT){
                 printf("warning");
             }
-            
+
             client_sock_f = accept(serv_sock_f, (struct sockaddr *)&client_addr, &client_sock_l);
             //for login
             read_header(client_sock_f);
             response(client_sock_f);
             //login done  begin msg ...
-            
+
             // record to client pool
             client_heap[client_len] = client_sock_f ;
             client_len++ ;
 
             /* 添加到客户端epoll */
+            cli_vertor[cli_counter] = client_sock_f;
+            cli_counter++;
 			_event.data.fd = client_sock_f;
     		_event.events = EPOLLIN | EPOLLOUT ;
 			epoll_ctl(ep_clients, EPOLL_CTL_ADD, client_sock_f, &_event);
@@ -177,20 +185,20 @@ int main()
 
         unsigned char _infos;
         memcpy(&_infos, frameBuff, 1);
-        
+
         //0 FIN
         //1-3 RSV1-3
         //4-7 opcode
-        
+
         unsigned char fin = _infos>>7;
         printf("fin is %u \n", fin);
 
         unsigned char _len, len_flag;
         memcpy(&_len, frameBuff+1, 1);
-        
+
         //0 MASK
         //1-7 Payload len
-        
+
         unsigned long len = _len ;
         len_flag = _len;
 
@@ -205,7 +213,7 @@ int main()
 
         if(len_flag>125){   //暂时不支持大内容数据
             if (len_flag==126) {
-                // code 
+                // code
                 char xx[2];
                 recv(client_sock_f, xx, 2, 0);
                 unsigned short _len16 ;
@@ -328,20 +336,20 @@ static void *thread_func(void *udata)
 
                 unsigned char _infos;
                 memcpy(&_infos, frameBuff, 1);
-                
+
                 //0 FIN
                 //1-3 RSV1-3
                 //4-7 opcode
-                
+
                 unsigned char fin = _infos>>7;
                 printf("fin is %u \n", fin);
 
                 unsigned char _len, len_flag;
                 memcpy(&_len, frameBuff+1, 1);
-                
+
                 //0 MASK
                 //1-7 Payload len
-                
+
                 unsigned long len = _len ;
                 len_flag = _len;
 
@@ -356,7 +364,7 @@ static void *thread_func(void *udata)
 
                 if(len_flag>125){   //暂时不支持大内容数据
                     if (len_flag==126) {
-                        // code 
+                        // code
                         char xx[2];
                         recv(client_sock_f, xx, 2, 0);
                         unsigned short _len16 ;
@@ -420,7 +428,12 @@ static void *thread_func(void *udata)
 
                 memcpy(sendBuff+send_len, content, len) ;
                 send_len += len;
-                send(client_sock_f, sendBuff, send_len, 0);
+                //send(client_sock_f, sendBuff, send_len, 0);
+                size_t i = 0 ;
+                for (i = 0; i < cli_counter; i++) {
+                    /* code */
+                    send(cli_vertor[i], sendBuff, send_len, 0);
+                }
 
                 //清理内存 ╭(╯^╰)╮
                 free(sendBuff);
