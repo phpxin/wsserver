@@ -72,6 +72,7 @@ int main()
 
     signal(SIGCHLD, sigfunc_callback);
     signal(SIGINT, sigfunc_callback);
+    signal(SIGPIPE, SIG_IGN);
 
     struct sockaddr_in serv_addr;
 	serv_sock_f = socket(AF_INET, SOCK_STREAM, 0);
@@ -186,6 +187,7 @@ static void *thread_func(void *udata)
 				//msg(ce_ok[i].data.fd);
                 int client_sock_f = ce_ok[i].data.fd;
                 void *frameBuff = malloc(2);
+                memset(frameBuff, '\0', 2);
                 //int recv( _In_ SOCKET s, _Out_ char *buf, _In_ int len, _In_ int flags);
                 recv(client_sock_f, frameBuff, 2, 0);
 
@@ -199,102 +201,118 @@ static void *thread_func(void *udata)
                 unsigned char fin = _infos>>7;
                 printf("fin is %u \n", fin);
 
-                unsigned char _len, len_flag;
-                memcpy(&_len, frameBuff+1, 1);
+                unsigned char opcode = _infos & 15 ;
 
-                //0 MASK
-                //1-7 Payload len
+                if(opcode == 1){
 
-                unsigned long len = _len ;
-                len_flag = _len;
+                    unsigned char _len, len_flag;
+                    memcpy(&_len, frameBuff+1, 1);
 
-                unsigned char mask = _len>>7;
-                printf("mask is %u\n", mask);
+                    //0 MASK
+                    //1-7 Payload len
 
-                unsigned char _mask[4];
-                if(mask){
-                    len_flag = len = _len^128 ;
-                    //recv(client_sock_f, _mask, 4, 0);
-                }
+                    unsigned long len = _len ;
+                    len_flag = _len;
 
-                if(len_flag>125){   //暂时不支持大内容数据
+                    unsigned char mask = _len>>7;
+                    printf("mask is %u\n", mask);
+
+                    unsigned char _mask[4];
+                    if(mask){
+                        len_flag = len = _len^128 ;   //做异或运算
+                        //recv(client_sock_f, _mask, 4, 0);
+                    }
+
+                    if(len_flag>125){   //暂时不支持大内容数据
+                        if (len_flag==126) {
+                            // code
+                            char xx[2];
+                            recv(client_sock_f, xx, 2, 0);
+                            unsigned short _len16 ;
+                            memcpy(&_len16, xx, 2);
+                            len = ntohs(_len16);
+                        }else if(len_flag==127){
+                            char xx[8];
+                            recv(client_sock_f, xx, 8, 0);
+                            unsigned long _len64 ;
+                            memcpy(&_len64, xx, 8);
+                            len = ntohl(_len64);
+                        }else{
+                            printf("content too long \n");
+                            exit(-1);
+                        }
+                    }
+
+                    printf("len is %u \n", len);
+
+                    if(mask){
+                        recv(client_sock_f, _mask, 4, 0);
+                    }
+
+                    char *content = (char *) malloc(len);
+                    memset(content, '\0', len);
+                    recv(client_sock_f, content, len, 0);
+
+                    if(mask){
+                        // 解码
+                        int i;
+                        for(i=0; i<len; i++){
+                            content[i] = content[i] ^ _mask[i%4] ;
+                        }
+                    }
+
+                    printf("recv: %s\n", content);
+
+                    // response
+                    size_t _send_len = 32*4 + len , send_len = 0  ; // 待发送的数据长度
+                    void *sendBuff = malloc(_send_len);
+                    memset(sendBuff, '\0', _send_len);
+
+                    unsigned char response_1b = 0 ;
+                    response_1b = response_1b | (1<<7) ;
+                    response_1b = response_1b | 1 ;
+                    unsigned char response_2b = len_flag;
+
+                    memcpy(sendBuff, &response_1b, 1);
+                    memcpy(sendBuff+1, &response_2b, 1);
+                    send_len+=2;
+
                     if (len_flag==126) {
-                        // code
-                        char xx[2];
-                        recv(client_sock_f, xx, 2, 0);
-                        unsigned short _len16 ;
-                        memcpy(&_len16, xx, 2);
-                        len = ntohs(_len16);
+
+                        unsigned short _tmp = htons(len);
+                        memcpy(sendBuff+2, &_tmp, 2);
+                        send_len += 2;
                     }else if(len_flag==127){
-                        char xx[8];
-                        recv(client_sock_f, xx, 8, 0);
-                        unsigned long _len64 ;
-                        memcpy(&_len64, xx, 8);
-                        len = ntohl(_len64);
-                    }else{
-                        printf("content too long \n");
-                        exit(-1);
+
+                        unsigned long _tmp = htonl(len);
+                        memcpy(sendBuff+2, &_tmp, 8);
+                        send_len += 8;
                     }
-                }
 
-                printf("len is %u \n", len);
-
-                if(mask){
-                    recv(client_sock_f, _mask, 4, 0);
-                }
-
-                char *content = (char *) malloc(len);
-                recv(client_sock_f, content, len, 0);
-
-                if(mask){
-                    // 解码
-                    int i;
-                    for(i=0; i<len; i++){
-                        content[i] = content[i] ^ _mask[i%4] ;
+                    memcpy(sendBuff+send_len, content, len) ;
+                    send_len += len;
+                    //send(client_sock_f, sendBuff, send_len, 0);
+                    size_t i = 0 ;
+                    for (i = 0; i < cli_counter; i++) {
+                        /* code */
+                        send(cli_vertor[i], sendBuff, send_len, 0);
                     }
+
+                    //清理内存 ╭(╯^╰)╮
+                    free(sendBuff);
+                    sendBuff = NULL;
+                    free(content);
+                    content = NULL;
+
+                }else if(opcode == 8){
+                    //结束帧
+                    printf("opcode %d 结束帧 \n", opcode);
+                    epoll_ctl(ep_clients, EPOLL_CTL_DEL, client_sock_f, NULL);
+                }else{
+                    printf("opcode %d 暂不支持 \n", opcode);
+                    exit(-1);
                 }
 
-                printf("recv: %s\n", content);
-
-                // response
-                size_t _send_len = 32*4 + len , send_len = 0  ; // 待发送的数据长度
-                void *sendBuff = malloc(_send_len);
-
-                unsigned char response_1b = 0 ;
-                response_1b = response_1b | (1<<7) ;
-                response_1b = response_1b | 1 ;
-                unsigned char response_2b = len_flag;
-
-                memcpy(sendBuff, &response_1b, 1);
-                memcpy(sendBuff+1, &response_2b, 1);
-                send_len+=2;
-
-                if (len_flag==126) {
-
-                    unsigned short _tmp = htons(len);
-                    memcpy(sendBuff+2, &_tmp, 2);
-                    send_len += 2;
-                }else if(len_flag==127){
-
-                    unsigned long _tmp = htonl(len);
-                    memcpy(sendBuff+2, &_tmp, 8);
-                    send_len += 8;
-                }
-
-                memcpy(sendBuff+send_len, content, len) ;
-                send_len += len;
-                //send(client_sock_f, sendBuff, send_len, 0);
-                size_t i = 0 ;
-                for (i = 0; i < cli_counter; i++) {
-                    /* code */
-                    send(cli_vertor[i], sendBuff, send_len, 0);
-                }
-
-                //清理内存 ╭(╯^╰)╮
-                free(sendBuff);
-                sendBuff = NULL;
-                free(content);
-                content = NULL;
                 free(frameBuff);
                 frameBuff = NULL;
 			}
