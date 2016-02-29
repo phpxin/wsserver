@@ -1,12 +1,1 @@
-//房间
-struct ROOM{
-    int id;
-    char *name;
-    
-    
-} ;
-
-
-
-//玩家
-
+int equals_callback_llink_int(int e1, int e2) ;

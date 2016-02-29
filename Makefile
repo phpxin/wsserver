@@ -1,7 +1,7 @@
 all: wsserver
 
 CC = gcc
-CFLAGS = -g 
+CFLAGS = -g
 #-Wall -ansi -D_REENTRANT
 
 SSLDIR = /usr/lib64/openssl/
@@ -13,8 +13,8 @@ BINF = ./bin/
 INCLUDE = -I./h/
 CLIB = -L${SSLDIR}engines/ -lcapi -lpthread
 
-wsserver: ${OUTPUTF}main.o ${OUTPUTF}base64.o ${OUTPUTF}cencode.o ${OUTPUTF}cdecode.o ${OUTPUTF}HString.o
-	${CC} ${CFLAGS} -o ${BINF}wsserver ${OUTPUTF}main.o ${OUTPUTF}base64.o ${OUTPUTF}cencode.o ${OUTPUTF}cdecode.o ${OUTPUTF}HString.o ${CLIB}
+wsserver: ${OUTPUTF}main.o ${OUTPUTF}base64.o ${OUTPUTF}cencode.o ${OUTPUTF}cdecode.o ${OUTPUTF}HString.o ${OUTPUTF}linklist.o ${OUTPUTF}funcs.o
+	${CC} ${CFLAGS} -o ${BINF}wsserver ${OUTPUTF}main.o ${OUTPUTF}base64.o ${OUTPUTF}cencode.o ${OUTPUTF}cdecode.o ${OUTPUTF}HString.o ${OUTPUTF}linklist.o ${OUTPUTF}funcs.o ${CLIB}
 
 #create all c to o
 ${OUTPUTF}%.o: ${SRCF}%.c

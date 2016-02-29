@@ -23,6 +23,12 @@
 // error oper
 #include <errno.h>
 
+#define UDF_ELETYPE 1
+typedef int EleType ;
+#include "linklist.h"
+
+#include "public.h"
+
 #define IP "192.168.3.17"
 #define PORT 10002
 
@@ -65,6 +71,7 @@ struct epoll_event *ce_ok = NULL;
 //客户端连接符集合
 int cli_vertor[CLI_LIMIT] ;
 int cli_counter = 0 ;
+LLink client_vector ;
 
 int main()
 {
@@ -72,7 +79,9 @@ int main()
 
     signal(SIGCHLD, sigfunc_callback);
     signal(SIGINT, sigfunc_callback);
-    signal(SIGPIPE, SIG_IGN);
+    //signal(SIGPIPE, SIG_IGN);   // 由于没有做连接符删除，发送到一个已关闭链接会触发SIGPIPE信号，这里需要屏蔽该信号
+
+    init_llink(&client_vector);     //初始化客户端连接集合
 
     struct sockaddr_in serv_addr;
 	serv_sock_f = socket(AF_INET, SOCK_STREAM, 0);
@@ -163,6 +172,7 @@ int main()
             /* 添加到客户端epoll */
             cli_vertor[cli_counter] = client_sock_f;
             cli_counter++;
+            append_data_llink(&client_vector, client_sock_f);
 			_event.data.fd = client_sock_f;
     		_event.events = EPOLLIN | EPOLLOUT ;
 			epoll_ctl(ep_clients, EPOLL_CTL_ADD, client_sock_f, &_event);
@@ -292,10 +302,25 @@ static void *thread_func(void *udata)
                     memcpy(sendBuff+send_len, content, len) ;
                     send_len += len;
                     //send(client_sock_f, sendBuff, send_len, 0);
+
+                    /*
                     size_t i = 0 ;
                     for (i = 0; i < cli_counter; i++) {
-                        /* code */
+
                         send(cli_vertor[i], sendBuff, send_len, 0);
+                    }
+                    */
+
+                    if (!isempty_llink(&client_vector)) {
+                        LNode *node = client_vector.head->next ;
+
+                        while(node->next != NULL)
+                        {
+                            //printf("%d \n", node->data);
+                            //iterator_callback_llink(node->data);
+                            send(node->data, sendBuff, send_len, 0);
+                            node = node->next ;
+                        }
                     }
 
                     //清理内存 ╭(╯^╰)╮
@@ -308,6 +333,7 @@ static void *thread_func(void *udata)
                     //结束帧
                     printf("opcode %d 结束帧 \n", opcode);
                     epoll_ctl(ep_clients, EPOLL_CTL_DEL, client_sock_f, NULL);
+                    del_data_llink(&client_vector, client_sock_f, equals_callback_llink_int) ;
                 }else{
                     printf("opcode %d 暂不支持 \n", opcode);
                     exit(-1);
