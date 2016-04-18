@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+    <style>
+        *{
+            margin:0;
+            padding:0;
+            float:left;
+        }
+        #drawer,#drawer_copy{
+            border:1px solid red;
+        }
+        button{
+            padding: 5px 20px;
+            margin: 0 10px;
+        }
+
+    </style>
+</head>
+<body>
+<canvas width="800" height="800" id="drawer"></canvas>
+<button id="copy"> Copy </button>
+<canvas width="800" height="800" id="drawer_copy"></canvas>
+<script>
+    // init socket
+    var ws = new WebSocket("ws://192.168.3.17:10002");
+
+    ws.onopen = function(){
+        console.log("握手成功");
+    };
+
+    ws.onclose = function () {
+        console.log("closed") ;
+    }
+
+    ws.onmessage = function(e){
+        console.log("message:" + e.data);
+        var points = JSON.parse(e.data) ;//eval("("++")");
+
+        if(points.length>1) {
+            cobj_copy.beginPath();
+            cobj_copy.moveTo(points[0][0], points[0][1]);
+            for (var i = 1, c = points.length; i < c; i++) {
+                cobj_copy.lineTo(points[i][0], points[i][1]) ;
+            }
+            cobj_copy.stroke();
+        }
+    };
+
+    ws.onerror = function(){
+        console.log("error");
+    };
+
+    //init socket ok
+
+
+    var cdom = document.getElementById('drawer');
+    var cobj = cdom.getContext('2d');//获取一个canvas的2d上下文
+
+    var cdom_copy = document.getElementById('drawer_copy');
+    var cobj_copy = cdom_copy.getContext('2d');
+
+    var m_x = 0;
+    var m_y = 0;
+    var flag_draw = false;
+
+    var senddata = [];
+    var _senddata = [];
+
+    cdom.onmousedown = function(){
+        console.log(event.x)
+
+        flag_draw = true;
+        m_x = event.x;
+        m_y = event.y;
+
+        cobj.beginPath();
+        cobj.moveTo(event.x, event.y);
+
+        addData(event.x, event.y);
+        _addData(event.x, event.y);
+    }
+
+    cdom.onmousemove = function(){
+        if(flag_draw){
+            cobj.lineTo(event.x,event.y) ;
+            cobj.stroke();
+
+            if(Math.abs(m_x-event.x)>5 && Math.abs(m_y-event.y)>5){
+                m_x = event.x;
+                m_y = event.y;
+                addData(event.x, event.y);
+            }
+            _addData(event.x, event.y);
+        }
+    }
+
+    cdom.onmouseup = function(){
+        flag_draw = false;
+
+        addData(event.x, event.y);
+        _addData(event.x, event.y);
+        senddata_do();
+    }
+
+    document.getElementById("copy").addEventListener("click",function(){
+        var _o = cobj.getImageData(0,0,800,800);
+        cobj_copy.putImageData(_o,0,0,0,0,800,800);
+    })
+
+    function senddata_do(){
+        var _debug = JSON.stringify(senddata);
+        console.log(_debug);
+
+        // draw
+        /*
+        if(senddata.length>1) {
+            cobj_copy.beginPath();
+            cobj_copy.moveTo(senddata[0][0], senddata[0][1]);
+            for (var i = 1, c = senddata.length; i < c; i++) {
+                cobj_copy.lineTo(senddata[i][0], senddata[i][1]) ;
+            }
+            cobj_copy.stroke();
+        }
+        */
+        // draw end
+        // send data
+        if(ws.readyState == WebSocket.OPEN){
+            console.log("ok send ...") ;
+            try{
+                //var content = document.getElementById('content').value ;
+                ws.send(_debug);
+            }catch(ex){
+                console.log(ex.toString()) ;
+            }
+
+        }
+        // send data end
+
+        senddata = [];
+
+        var _debug2 = JSON.stringify(_senddata);
+        console.log(_debug2);
+        _senddata = [] ;
+    }
+
+    function addData(x, y){
+        senddata.push([x,y]) ;
+    }
+
+    function _addData(x,y){
+        _senddata.push([x,y]) ;
+    }
+
+
+</script>
+</body>
+</html>

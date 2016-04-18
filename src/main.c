@@ -29,7 +29,7 @@ typedef int EleType ;
 
 #include "public.h"
 
-#define IP "192.168.1.109"
+#define IP "192.168.3.17"
 #define PORT 10002
 
 #define BS 1024   ///buff size
