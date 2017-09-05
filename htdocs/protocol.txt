@@ -1,0 +1,30 @@
+开始游戏
+{
+	"uid":1,
+	"rid":1,
+	"protocol":"begin"
+}
+
+
+绘制
+{
+	"uid":1,
+	"rid":1,
+	"protocol":"draw"
+	"points":[]
+}
+
+聊天消息
+{
+	"uid":1,
+	"rid":1,
+	"protocol":"msg",
+	"msg":"xxx"
+}
+
+结束游戏
+{
+	"uid":1,
+	"rid":1,
+	"protocol":"end"
+}

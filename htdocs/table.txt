@@ -1,0 +1,20 @@
+user 
+id
+name
+cookie_str (不用注册，在浏览器种cookie即可)
+created_time
+
+room
+id
+created_uid
+created_time
+status    等待加入（2个人以上可以显示开始游戏按钮），游戏中，已完成
+word   竞猜词
+winner_uid   成功竞猜者uid
+
+
+room_user
+id
+room_id
+user_id
+add_time
